@@ -5,7 +5,7 @@ const FILTERS = [
   { id: "sepia", name: "Vintage", css: "sepia(0.75) contrast(1.1) saturate(1.2) brightness(1.05)" },
   { id: "bw", name: "Classic B&W", css: "grayscale(1) contrast(1.25) brightness(1.05)" },
   { id: "faded", name: "Polaroid", css: "sepia(0.25) contrast(0.9) saturate(0.85) brightness(1.15) hue-rotate(-10deg)" },
-  { id: "neon", name: "Neon", css: "contrast(1.3) saturate(1.8) hue-rotate(280deg) brightness(1.1)" },
+  { id: "soft", name: "Soft Glow", css: "brightness(1.12) contrast(0.92) saturate(1.15) sepia(0.08) blur(0.4px)" },
 ];
 
 const SHOTS_PER_STRIP = 3;
