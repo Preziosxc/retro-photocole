@@ -11,12 +11,19 @@ const FILTERS = [
 const SHOTS_PER_STRIP = 3;
 const COUNTDOWN_SECONDS = 3;
 
+// Capture sizes
+const PORTRAIT_W = 720;
+const PORTRAIT_H = 960;
+const LANDSCAPE_W = 960;
+const LANDSCAPE_H = 720;
+
 export default function App() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
 
   const [filter, setFilter] = useState(FILTERS[0]);
+  const [orientation, setOrientation] = useState("portrait"); // "portrait" | "landscape"
   const [photos, setPhotos] = useState([]);
   const [countdown, setCountdown] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
@@ -28,7 +35,11 @@ export default function App() {
     async function startCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 1280, height: 720, facingMode: "user" },
+          video: {
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+            facingMode: "user",
+          },
           audio: false,
         });
         if (!mounted) return;
@@ -50,7 +61,6 @@ export default function App() {
     };
   }, []);
 
-  // Soft-focus pass drawn on the canvas itself (works everywhere)
   const applySoftGlow = (ctx, w, h) => {
     ctx.save();
     ctx.globalAlpha = 0.35;
@@ -64,40 +74,58 @@ export default function App() {
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
 
-    // Wait for video dimensions on mobile
     if (!video.videoWidth || !video.videoHeight) {
       await new Promise((r) => setTimeout(r, 300));
     }
 
-    const w = video.videoWidth;
-    const h = video.videoHeight;
-    if (!w || !h) return null;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return null;
 
-    canvas.width = w;
-    canvas.height = h;
+    const capW = orientation === "portrait" ? PORTRAIT_W : LANDSCAPE_W;
+    const capH = orientation === "portrait" ? PORTRAIT_H : LANDSCAPE_H;
+
+    canvas.width = capW;
+    canvas.height = capH;
 
     const ctx = canvas.getContext("2d");
-
-    // Reset transform + filter every single capture
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.filter = "none";
-    ctx.clearRect(0, 0, w, h);
+    ctx.clearRect(0, 0, capW, capH);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
 
-    // Apply filter + mirror
+    // Cover-crop the video into the target shape
+    const srcAspect = vw / vh;
+    const dstAspect = capW / capH;
+
+    let sx, sy, sw, sh;
+    if (srcAspect > dstAspect) {
+      sh = vh;
+      sw = sh * dstAspect;
+      sx = (vw - sw) / 2;
+      sy = 0;
+    } else {
+      sw = vw;
+      sh = sw / dstAspect;
+      sx = 0;
+      sy = (vh - sh) / 2;
+    }
+
     ctx.filter = filter.css;
     ctx.save();
-    ctx.translate(w, 0);
+    ctx.translate(capW, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, w, h);
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, capW, capH);
     ctx.restore();
 
     if (filter.id === "soft") {
       ctx.filter = "none";
-      applySoftGlow(ctx, w, h);
+      applySoftGlow(ctx, capW, capH);
     }
 
-    return canvas.toDataURL("image/jpeg", 0.98);
-  }, [filter]);
+    return canvas.toDataURL("image/jpeg", 1.0);
+  }, [filter, orientation]);
 
   const startSession = useCallback(async () => {
     setPhotos([]);
@@ -111,7 +139,6 @@ export default function App() {
       setCountdown("◉");
 
       setFlash(true);
-      // Let the browser paint the flash before grabbing the frame
       await new Promise((r) => setTimeout(r, 60));
       const dataUrl = await captureFrame();
       if (dataUrl) captured.push(dataUrl);
@@ -128,22 +155,31 @@ export default function App() {
   const buildStripCanvas = useCallback(async () => {
     if (photos.length === 0) return null;
 
-    // --- Portrait strip layout ---
-    const imgW = 440;              // narrower
-    const imgH = 560;              // taller → portrait photos
-    const padding = 28;
-    const footerH = 110;
+    const isPortrait = orientation === "portrait";
+    const imgW = isPortrait ? PORTRAIT_W : LANDSCAPE_W;
+    const imgH = isPortrait ? PORTRAIT_H : LANDSCAPE_H;
+    const padding = isPortrait ? 40 : 36;
+    const footerH = isPortrait ? 160 : 130;
 
     const stripCanvas = document.createElement("canvas");
-    stripCanvas.width = imgW + padding * 2;
-    stripCanvas.height =
-      imgH * photos.length + padding * (photos.length + 1) + footerH;
+
+    if (isPortrait) {
+      // Vertical stack
+      stripCanvas.width = imgW + padding * 2;
+      stripCanvas.height =
+        imgH * photos.length + padding * (photos.length + 1) + footerH;
+    } else {
+      // Horizontal row (landscape strip)
+      stripCanvas.width =
+        imgW * photos.length + padding * (photos.length + 1);
+      stripCanvas.height = imgH + padding * 2 + footerH;
+    }
 
     const ctx = stripCanvas.getContext("2d");
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
 
-    // Warm paper background
+    // Paper background
     const grad = ctx.createLinearGradient(0, 0, 0, stripCanvas.height);
     grad.addColorStop(0, "#f7f1e3");
     grad.addColorStop(1, "#ece3d0");
@@ -153,44 +189,28 @@ export default function App() {
     // Outer border
     ctx.strokeStyle = "rgba(120, 90, 50, 0.35)";
     ctx.lineWidth = 2;
-    ctx.strokeRect(6, 6, stripCanvas.width - 12, stripCanvas.height - 12);
+    ctx.strokeRect(8, 8, stripCanvas.width - 16, stripCanvas.height - 16);
 
-    // Draw each photo, cropped to portrait without distortion
+    // Draw each photo
     await Promise.all(
       photos.map(
         (src, idx) =>
           new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
-              const x = padding;
-              const y = padding + idx * (imgH + padding);
-
-              // Cover-crop the source image into the portrait slot
-              const srcAspect = img.width / img.height;
-              const dstAspect = imgW / imgH;
-
-              let sx, sy, sw, sh;
-              if (srcAspect > dstAspect) {
-                // Source is wider → crop sides
-                sh = img.height;
-                sw = sh * dstAspect;
-                sx = (img.width - sw) / 2;
-                sy = 0;
+              let x, y;
+              if (isPortrait) {
+                x = padding;
+                y = padding + idx * (imgH + padding);
               } else {
-                // Source is taller → crop top/bottom
-                sw = img.width;
-                sh = sw / dstAspect;
-                sx = 0;
-                sy = (img.height - sh) / 2;
+                x = padding + idx * (imgW + padding);
+                y = padding;
               }
+              ctx.drawImage(img, x, y, imgW, imgH);
 
-              ctx.drawImage(img, sx, sy, sw, sh, x, y, imgW, imgH);
-
-              // Thin photo border
               ctx.strokeStyle = "rgba(0,0,0,0.18)";
               ctx.lineWidth = 1;
               ctx.strokeRect(x, y, imgW, imgH);
-
               resolve();
             };
             img.src = src;
@@ -198,38 +218,54 @@ export default function App() {
       )
     );
 
-    // Footer text
-    const footerY = padding + photos.length * (imgH + padding);
+    // Footer
     ctx.fillStyle = "#3a2f1e";
-    ctx.font = "bold 26px 'Courier New', monospace";
     ctx.textAlign = "center";
-    ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 40);
 
-    ctx.font = "14px 'Courier New', monospace";
-    ctx.fillStyle = "#7a6a4f";
-    ctx.fillText(
-      new Date().toLocaleString(),
-      stripCanvas.width / 2,
-      footerY + 72
-    );
+    if (isPortrait) {
+      const footerY = padding + photos.length * (imgH + padding);
+      ctx.font = "bold 40px 'Courier New', monospace";
+      ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 60);
+      ctx.font = "22px 'Courier New', monospace";
+      ctx.fillStyle = "#7a6a4f";
+      ctx.fillText(
+        new Date().toLocaleString(),
+        stripCanvas.width / 2,
+        footerY + 110
+      );
+    } else {
+      const footerY = padding + imgH + padding;
+      ctx.font = "bold 36px 'Courier New', monospace";
+      ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 50);
+      ctx.font = "20px 'Courier New', monospace";
+      ctx.fillStyle = "#7a6a4f";
+      ctx.fillText(
+        new Date().toLocaleString(),
+        stripCanvas.width / 2,
+        footerY + 90
+      );
+    }
 
     return stripCanvas;
-  }, [photos]);
+  }, [photos, orientation]);
 
   const downloadStrip = useCallback(async () => {
     const canvas = await buildStripCanvas();
     if (!canvas) return;
-
-    // PNG export for max quality
     const link = document.createElement("a");
-    link.download = `retro-booth-${Date.now()}.png`;
-    link.href = canvas.toDataURL("image/png");
+    link.download = `retro-booth-${orientation}-${Date.now()}.jpg`;
+    link.href = canvas.toDataURL("image/jpeg", 1.0);
     link.click();
-  }, [buildStripCanvas]);
+  }, [buildStripCanvas, orientation]);
 
   const reset = () => {
     setPhotos([]);
     setCountdown(null);
+  };
+
+  const switchOrientation = (mode) => {
+    if (photos.length > 0) return; // lock during results
+    setOrientation(mode);
   };
 
   return (
@@ -252,7 +288,11 @@ export default function App() {
           <span className="hud-tag right">{filter.name.toUpperCase()}</span>
         </div>
 
-        <div className="viewfinder">
+        <div
+          className={`viewfinder ${
+            orientation === "portrait" ? "portrait" : "landscape"
+          }`}
+        >
           <video
             ref={videoRef}
             playsInline
@@ -272,6 +312,26 @@ export default function App() {
         </div>
 
         <canvas ref={canvasRef} style={{ display: "none" }} />
+
+        {/* Orientation toggle */}
+        <div className="orientation-toggle">
+          <button
+            className={`orient-btn ${orientation === "portrait" ? "active" : ""}`}
+            onClick={() => switchOrientation("portrait")}
+            disabled={photos.length > 0}
+          >
+            <span className="orient-icon">▯</span>
+            PORTRAIT
+          </button>
+          <button
+            className={`orient-btn ${orientation === "landscape" ? "active" : ""}`}
+            onClick={() => switchOrientation("landscape")}
+            disabled={photos.length > 0}
+          >
+            <span className="orient-icon">▭</span>
+            LANDSCAPE
+          </button>
+        </div>
 
         <div className="filters">
           {FILTERS.map((f) => (
@@ -299,7 +359,7 @@ export default function App() {
           {photos.length > 0 && (
             <>
               <button className="shoot-btn" onClick={downloadStrip}>
-                DOWNLOAD STRIP
+                 DOWNLOAD STRIP
               </button>
               <button className="reset-btn" onClick={reset}>
                 RETAKE
@@ -313,7 +373,7 @@ export default function App() {
         <div className="preview">
           <h2>— YOUR STRIP —</h2>
           <div className="strip-wrapper">
-            <div className="strip">
+            <div className={`strip ${orientation}`}>
               {photos.map((p, i) => (
                 <img key={i} src={p} alt={`shot-${i + 1}`} />
               ))}

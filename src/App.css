@@ -11,9 +11,7 @@
   --paper: #f5ecd8;
 }
 
-html, body, #root {
-  min-height: 100%;
-}
+html, body, #root { min-height: 100%; }
 
 body {
   background: var(--ink);
@@ -149,8 +147,19 @@ body {
   border-radius: 16px;
   overflow: hidden;
   background: #000;
-  aspect-ratio: 4/3;
   border: 1px solid rgba(255, 179, 71, 0.25);
+  margin: 0 auto;
+  transition: aspect-ratio 0.3s ease, max-width 0.3s ease;
+}
+
+.viewfinder.portrait {
+  aspect-ratio: 3/4;
+  max-width: 420px;
+}
+
+.viewfinder.landscape {
+  aspect-ratio: 4/3;
+  max-width: 100%;
 }
 
 .viewfinder video {
@@ -238,11 +247,61 @@ body {
   50%      { transform: scale(1.12); opacity: 0.85; }
 }
 
+/* ============ ORIENTATION TOGGLE ============ */
+.orientation-toggle {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 22px;
+}
+
+.orient-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(255, 179, 71, 0.06);
+  color: var(--amber-soft);
+  border: 1px solid var(--panel-border);
+  padding: 12px 22px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 0.72rem;
+  letter-spacing: 2.5px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(8px);
+}
+
+.orient-btn:hover:not(:disabled) {
+  background: rgba(255, 179, 71, 0.14);
+  transform: translateY(-1px);
+}
+
+.orient-btn.active {
+  background: linear-gradient(135deg, rgba(255, 179, 71, 0.9), rgba(255, 106, 0, 0.9));
+  color: #1a1208;
+  border-color: transparent;
+  box-shadow:
+    0 0 24px rgba(255, 179, 71, 0.5),
+    0 8px 24px rgba(255, 106, 0, 0.3);
+}
+
+.orient-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.orient-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
 /* ============ FILTERS ============ */
 .filters {
   display: flex;
   gap: 10px;
-  margin: 22px 0 18px;
+  margin: 18px 0;
   justify-content: center;
   flex-wrap: wrap;
 }
@@ -327,9 +386,7 @@ body {
     inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
-.shoot-btn:active:not(:disabled) {
-  transform: translateY(1px);
-}
+.shoot-btn:active:not(:disabled) { transform: translateY(1px); }
 
 .shoot-btn:disabled {
   opacity: 0.4;
@@ -358,16 +415,8 @@ body {
   box-shadow: 0 0 20px rgba(255, 179, 71, 0.25);
 }
 
-.reset-btn.small {
-  padding: 8px 18px;
-  font-size: 0.7rem;
-  letter-spacing: 2px;
-}
-
 /* ============ PREVIEW ============ */
-.preview {
-  margin-top: 60px;
-}
+.preview { margin-top: 60px; }
 
 .preview h2 {
   color: var(--amber-soft);
@@ -384,6 +433,8 @@ body {
   align-items: center;
   gap: 14px;
   animation: fadeUp 0.5s ease both;
+  overflow-x: auto;
+  padding: 4px;
 }
 
 @keyframes fadeUp {
@@ -393,7 +444,6 @@ body {
 
 .strip {
   display: inline-flex;
-  flex-direction: column;
   gap: 8px;
   background: var(--paper);
   padding: 16px;
@@ -402,6 +452,16 @@ body {
     0 20px 60px rgba(0, 0, 0, 0.7),
     0 0 40px rgba(255, 179, 71, 0.15);
   position: relative;
+}
+
+.strip.portrait {
+  flex-direction: column;
+  max-width: 300px;
+}
+
+.strip.landscape {
+  flex-direction: row;
+  align-items: stretch;
 }
 
 .strip::before {
@@ -414,10 +474,21 @@ body {
 }
 
 .strip img {
-  width: 260px;
   display: block;
   border-radius: 2px;
   filter: contrast(1.02) saturate(1.05);
+}
+
+.strip.portrait img {
+  width: 100%;
+  aspect-ratio: 3/4;
+  object-fit: cover;
+}
+
+.strip.landscape img {
+  width: 180px;
+  aspect-ratio: 4/3;
+  object-fit: cover;
 }
 
 .strip-footer {
@@ -427,6 +498,12 @@ body {
   padding: 8px 0 2px;
   letter-spacing: 3px;
   text-align: center;
+}
+
+.strip.landscape .strip-footer {
+  writing-mode: vertical-rl;
+  padding: 0 8px;
+  transform: rotate(180deg);
 }
 
 /* ============ ERROR ============ */
@@ -457,10 +534,11 @@ body {
 /* ============ RESPONSIVE ============ */
 @media (max-width: 520px) {
   .app { padding: 40px 14px 60px; }
-  .strip img { width: 200px; }
-  .strip { padding: 12px; }
+  .strip.portrait { max-width: 240px; }
+  .strip.landscape img { width: 130px; }
   .shoot-btn { padding: 14px 32px; font-size: 0.8rem; }
   .reset-btn { padding: 14px 22px; font-size: 0.75rem; }
   .filters { gap: 8px; }
   .filter-btn { padding: 8px 14px; font-size: 0.7rem; letter-spacing: 1.5px; }
+  .orient-btn { padding: 10px 16px; font-size: 0.65rem; letter-spacing: 2px; }
 }
