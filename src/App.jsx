@@ -59,17 +59,31 @@ export default function App() {
     ctx.restore();
   };
 
-  const captureFrame = useCallback(() => {
+  const captureFrame = useCallback(async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return null;
 
+    // Wait for video dimensions on mobile
+    if (!video.videoWidth || !video.videoHeight) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+
     const w = video.videoWidth;
     const h = video.videoHeight;
+    if (!w || !h) return null;
+
     canvas.width = w;
     canvas.height = h;
 
     const ctx = canvas.getContext("2d");
+
+    // Reset transform + filter every single capture
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.filter = "none";
+    ctx.clearRect(0, 0, w, h);
+
+    // Apply filter + mirror
     ctx.filter = filter.css;
     ctx.save();
     ctx.translate(w, 0);
@@ -97,7 +111,9 @@ export default function App() {
       setCountdown("◉");
 
       setFlash(true);
-      const dataUrl = captureFrame();
+      // Let the browser paint the flash before grabbing the frame
+      await new Promise((r) => setTimeout(r, 60));
+      const dataUrl = await captureFrame();
       if (dataUrl) captured.push(dataUrl);
 
       await new Promise((r) => setTimeout(r, 150));
@@ -271,7 +287,7 @@ export default function App() {
       <footer className="hud-footer">
         <span>EST. 2026</span>
         <span>·</span>
-        <span>MADE WITH ◉ REACT</span>
+        <span>MADE WITH ◉ CAEIGH</span>
       </footer>
     </div>
   );
