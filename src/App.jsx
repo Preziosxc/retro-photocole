@@ -96,7 +96,7 @@ export default function App() {
       applySoftGlow(ctx, w, h);
     }
 
-    return canvas.toDataURL("image/jpeg", 0.9);
+    return canvas.toDataURL("image/jpeg", 0.98);
   }, [filter]);
 
   const startSession = useCallback(async () => {
@@ -127,27 +127,35 @@ export default function App() {
 
   const buildStripCanvas = useCallback(async () => {
     if (photos.length === 0) return null;
-    const stripCanvas = document.createElement("canvas");
-    const imgW = 500;
-    const imgH = 375;
-    const padding = 24;
-    const footerH = 90;
 
+    // --- Portrait strip layout ---
+    const imgW = 440;              // narrower
+    const imgH = 560;              // taller → portrait photos
+    const padding = 28;
+    const footerH = 110;
+
+    const stripCanvas = document.createElement("canvas");
     stripCanvas.width = imgW + padding * 2;
-    stripCanvas.height = imgH * photos.length + padding * (photos.length + 1) + footerH;
+    stripCanvas.height =
+      imgH * photos.length + padding * (photos.length + 1) + footerH;
 
     const ctx = stripCanvas.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
 
+    // Warm paper background
     const grad = ctx.createLinearGradient(0, 0, 0, stripCanvas.height);
     grad.addColorStop(0, "#f7f1e3");
     grad.addColorStop(1, "#ece3d0");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
 
+    // Outer border
     ctx.strokeStyle = "rgba(120, 90, 50, 0.35)";
     ctx.lineWidth = 2;
     ctx.strokeRect(6, 6, stripCanvas.width - 12, stripCanvas.height - 12);
 
+    // Draw each photo, cropped to portrait without distortion
     await Promise.all(
       photos.map(
         (src, idx) =>
@@ -156,10 +164,33 @@ export default function App() {
             img.onload = () => {
               const x = padding;
               const y = padding + idx * (imgH + padding);
-              ctx.drawImage(img, x, y, imgW, imgH);
-              ctx.strokeStyle = "rgba(0,0,0,0.15)";
+
+              // Cover-crop the source image into the portrait slot
+              const srcAspect = img.width / img.height;
+              const dstAspect = imgW / imgH;
+
+              let sx, sy, sw, sh;
+              if (srcAspect > dstAspect) {
+                // Source is wider → crop sides
+                sh = img.height;
+                sw = sh * dstAspect;
+                sx = (img.width - sw) / 2;
+                sy = 0;
+              } else {
+                // Source is taller → crop top/bottom
+                sw = img.width;
+                sh = sw / dstAspect;
+                sx = 0;
+                sy = (img.height - sh) / 2;
+              }
+
+              ctx.drawImage(img, sx, sy, sw, sh, x, y, imgW, imgH);
+
+              // Thin photo border
+              ctx.strokeStyle = "rgba(0,0,0,0.18)";
               ctx.lineWidth = 1;
               ctx.strokeRect(x, y, imgW, imgH);
+
               resolve();
             };
             img.src = src;
@@ -167,14 +198,20 @@ export default function App() {
       )
     );
 
+    // Footer text
     const footerY = padding + photos.length * (imgH + padding);
     ctx.fillStyle = "#3a2f1e";
-    ctx.font = "bold 24px 'Courier New', monospace";
+    ctx.font = "bold 26px 'Courier New', monospace";
     ctx.textAlign = "center";
-    ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 34);
-    ctx.font = "13px 'Courier New', monospace";
+    ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 40);
+
+    ctx.font = "14px 'Courier New', monospace";
     ctx.fillStyle = "#7a6a4f";
-    ctx.fillText(new Date().toLocaleString(), stripCanvas.width / 2, footerY + 62);
+    ctx.fillText(
+      new Date().toLocaleString(),
+      stripCanvas.width / 2,
+      footerY + 72
+    );
 
     return stripCanvas;
   }, [photos]);
@@ -182,9 +219,11 @@ export default function App() {
   const downloadStrip = useCallback(async () => {
     const canvas = await buildStripCanvas();
     if (!canvas) return;
+
+    // PNG export for max quality
     const link = document.createElement("a");
-    link.download = `retro-booth-${Date.now()}.jpg`;
-    link.href = canvas.toDataURL("image/jpeg", 0.92);
+    link.download = `retro-booth-${Date.now()}.png`;
+    link.href = canvas.toDataURL("image/png");
     link.click();
   }, [buildStripCanvas]);
 
@@ -260,7 +299,7 @@ export default function App() {
           {photos.length > 0 && (
             <>
               <button className="shoot-btn" onClick={downloadStrip}>
-                ⬇ DOWNLOAD STRIP
+                DOWNLOAD STRIP
               </button>
               <button className="reset-btn" onClick={reset}>
                 RETAKE

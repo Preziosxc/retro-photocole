@@ -414,7 +414,7 @@ body {
 }
 
 .strip img {
-  width: 340px;
+  width: 260px;
   display: block;
   border-radius: 2px;
   filter: contrast(1.02) saturate(1.05);
@@ -457,7 +457,7 @@ body {
 /* ============ RESPONSIVE ============ */
 @media (max-width: 520px) {
   .app { padding: 40px 14px 60px; }
-  .strip img { width: 240px; }
+  .strip img { width: 200px; }
   .strip { padding: 12px; }
   .shoot-btn { padding: 14px 32px; font-size: 0.8rem; }
   .reset-btn { padding: 14px 22px; font-size: 0.75rem; }
