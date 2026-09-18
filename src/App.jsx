@@ -5,7 +5,7 @@ const FILTERS = [
   { id: "sepia", name: "Vintage", css: "sepia(0.75) contrast(1.1) saturate(1.2) brightness(1.05)" },
   { id: "bw", name: "Classic B&W", css: "grayscale(1) contrast(1.25) brightness(1.05)" },
   { id: "faded", name: "Polaroid", css: "sepia(0.25) contrast(0.9) saturate(0.85) brightness(1.15) hue-rotate(-10deg)" },
-  { id: "soft", name: "Soft Glow", css: "brightness(1.12) contrast(0.92) saturate(1.15) sepia(0.08) blur(0.4px)" },
+  { id: "soft", name: "Soft Glow", css: "brightness(1.12) contrast(0.92) saturate(1.15) sepia(0.08)" },
 ];
 
 const SHOTS_PER_STRIP = 3;
@@ -23,7 +23,6 @@ export default function App() {
   const [error, setError] = useState(null);
   const [flash, setFlash] = useState(false);
 
-  // Start camera
   useEffect(() => {
     let mounted = true;
     async function startCamera() {
@@ -51,6 +50,15 @@ export default function App() {
     };
   }, []);
 
+  // Soft-focus pass drawn on the canvas itself (works everywhere)
+  const applySoftGlow = (ctx, w, h) => {
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.globalCompositeOperation = "lighten";
+    ctx.drawImage(ctx.canvas, -4, -4, w + 8, h + 8);
+    ctx.restore();
+  };
+
   const captureFrame = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -68,6 +76,11 @@ export default function App() {
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, w, h);
     ctx.restore();
+
+    if (filter.id === "soft") {
+      ctx.filter = "none";
+      applySoftGlow(ctx, w, h);
+    }
 
     return canvas.toDataURL("image/jpeg", 0.9);
   }, [filter]);
@@ -109,14 +122,12 @@ export default function App() {
 
     const ctx = stripCanvas.getContext("2d");
 
-    // Warm paper gradient
     const grad = ctx.createLinearGradient(0, 0, 0, stripCanvas.height);
     grad.addColorStop(0, "#f7f1e3");
     grad.addColorStop(1, "#ece3d0");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
 
-    // Thin inner border
     ctx.strokeStyle = "rgba(120, 90, 50, 0.35)";
     ctx.lineWidth = 2;
     ctx.strokeRect(6, 6, stripCanvas.width - 12, stripCanvas.height - 12);
