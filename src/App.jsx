@@ -1,0 +1,222 @@
+import { useRef, useState, useCallback, useEffect } from "react";
+import "./App.css";
+
+const FILTERS = [
+  { id: "sepia", name: "Vintage", css: "sepia(0.75) contrast(1.1) saturate(1.2) brightness(1.05)" },
+  { id: "bw", name: "Classic B&W", css: "grayscale(1) contrast(1.25) brightness(1.05)" },
+  { id: "faded", name: "Polaroid", css: "sepia(0.25) contrast(0.9) saturate(0.85) brightness(1.15) hue-rotate(-10deg)" },
+];
+
+const SHOTS_PER_STRIP = 4;
+const COUNTDOWN_SECONDS = 3;
+
+export default function App() {
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
+  const streamRef = useRef(null);
+
+  const [filter, setFilter] = useState(FILTERS[0]);
+  const [photos, setPhotos] = useState([]);
+  const [countdown, setCountdown] = useState(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const [error, setError] = useState(null);
+  const [flash, setFlash] = useState(false);
+
+  // Start camera
+  useEffect(() => {
+    let mounted = true;
+    async function startCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 1280, height: 720, facingMode: "user" },
+          audio: false,
+        });
+        if (!mounted) return;
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+          setCameraReady(true);
+        }
+      } catch (err) {
+        setError("Camera access denied. Please allow camera permissions.");
+        console.error(err);
+      }
+    }
+    startCamera();
+    return () => {
+      mounted = false;
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const captureFrame = useCallback(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return null;
+
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    canvas.width = w;
+    canvas.height = h;
+
+    const ctx = canvas.getContext("2d");
+    ctx.filter = filter.css;
+    ctx.drawImage(video, 0, 0, w, h);
+
+    return canvas.toDataURL("image/jpeg", 0.9);
+  }, [filter]);
+
+  const startSession = useCallback(async () => {
+    setPhotos([]);
+    const captured = [];
+
+    for (let i = 0; i < SHOTS_PER_STRIP; i++) {
+      // Countdown
+      for (let s = COUNTDOWN_SECONDS; s > 0; s--) {
+        setCountdown(s);
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+      setCountdown("📸");
+
+      // Flash + capture
+      setFlash(true);
+      const dataUrl = captureFrame();
+      if (dataUrl) captured.push(dataUrl);
+
+      await new Promise((r) => setTimeout(r, 150));
+      setFlash(false);
+      await new Promise((r) => setTimeout(r, 600));
+    }
+
+    setCountdown(null);
+    setPhotos(captured);
+  }, [captureFrame]);
+
+  const buildStrip = useCallback(async () => {
+    if (photos.length === 0) return null;
+    const stripCanvas = document.createElement("canvas");
+    const imgW = 500;
+    const imgH = 375;
+    const padding = 20;
+    const footerH = 70;
+
+    stripCanvas.width = imgW + padding * 2;
+    stripCanvas.height = imgH * photos.length + padding * (photos.length + 1) + footerH;
+
+    const ctx = stripCanvas.getContext("2d");
+    ctx.fillStyle = "#f5f0e1";
+    ctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
+
+    await Promise.all(
+      photos.map(
+        (src, idx) =>
+          new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+              ctx.drawImage(img, padding, padding + idx * (imgH + padding), imgW, imgH);
+              resolve();
+            };
+            img.src = src;
+          })
+      )
+    );
+
+    // Footer
+    const footerY = padding + photos.length * (imgH + padding);
+    ctx.fillStyle = "#3a3226";
+    ctx.font = "bold 22px 'Courier New', monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 30);
+    ctx.font = "14px 'Courier New', monospace";
+    ctx.fillText(new Date().toLocaleString(), stripCanvas.width / 2, footerY + 55);
+
+    return stripCanvas.toDataURL("image/jpeg", 0.92);
+  }, [photos]);
+
+  const downloadStrip = useCallback(async () => {
+    const dataUrl = await buildStrip();
+    if (!dataUrl) return;
+    const link = document.createElement("a");
+    link.download = `retro-booth-${Date.now()}.jpg`;
+    link.href = dataUrl;
+    link.click();
+  }, [buildStrip]);
+
+  const reset = () => {
+    setPhotos([]);
+    setCountdown(null);
+  };
+
+  return (
+    <div className="app">
+      <header>
+        <h1>📷 RETRO BOOTH</h1>
+        <p className="subtitle">Pick a filter · Smile · Download your strip</p>
+      </header>
+
+      {error && <div className="error">{error}</div>}
+
+      <div className="booth">
+        <div className="viewfinder">
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            style={{ filter: filter.css }}
+            className={flash ? "flash" : ""}
+          />
+          {countdown && <div className="countdown">{countdown}</div>}
+        </div>
+
+        <canvas ref={canvasRef} style={{ display: "none" }} />
+
+        <div className="filters">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              className={`filter-btn ${filter.id === f.id ? "active" : ""}`}
+              onClick={() => setFilter(f)}
+            >
+              {f.name}
+            </button>
+          ))}
+        </div>
+
+        <div className="controls">
+          {!photos.length && (
+            <button
+              className="shoot-btn"
+              onClick={startSession}
+              disabled={!cameraReady || countdown !== null}
+            >
+              {cameraReady ? "START SESSION" : "LOADING..."}
+            </button>
+          )}
+          {photos.length > 0 && (
+            <>
+              <button className="shoot-btn" onClick={downloadStrip}>
+                ⬇ DOWNLOAD STRIP
+              </button>
+              <button className="reset-btn" onClick={reset}>
+                RETAKE
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {photos.length > 0 && (
+        <div className="preview">
+          <h2>Your Strip</h2>
+          <div className="strip">
+            {photos.map((p, i) => (
+              <img key={i} src={p} alt={`shot-${i + 1}`} />
+            ))}
+            <div className="strip-footer">★ RETRO BOOTH ★</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
