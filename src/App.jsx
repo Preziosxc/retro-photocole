@@ -8,6 +8,7 @@ const FILTERS = [
 ];
 
 const SHOTS_PER_STRIP = 4;
+const STRIPS_PER_SESSION = 3;
 const COUNTDOWN_SECONDS = 3;
 
 export default function App() {
@@ -16,13 +17,13 @@ export default function App() {
   const streamRef = useRef(null);
 
   const [filter, setFilter] = useState(FILTERS[0]);
-  const [photos, setPhotos] = useState([]);
+  const [strips, setStrips] = useState([]);
   const [countdown, setCountdown] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
   const [error, setError] = useState(null);
   const [flash, setFlash] = useState(false);
+  const [progress, setProgress] = useState(null);
 
-  // Start camera
   useEffect(() => {
     let mounted = true;
     async function startCamera() {
@@ -62,59 +63,90 @@ export default function App() {
 
     const ctx = canvas.getContext("2d");
     ctx.filter = filter.css;
+    ctx.save();
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, w, h);
+    ctx.restore();
 
     return canvas.toDataURL("image/jpeg", 0.9);
   }, [filter]);
 
   const startSession = useCallback(async () => {
-    setPhotos([]);
-    const captured = [];
+    setStrips([]);
+    const allStrips = [];
 
-    for (let i = 0; i < SHOTS_PER_STRIP; i++) {
-      // Countdown
-      for (let s = COUNTDOWN_SECONDS; s > 0; s--) {
-        setCountdown(s);
-        await new Promise((r) => setTimeout(r, 1000));
+    for (let s = 0; s < STRIPS_PER_SESSION; s++) {
+      setProgress(`STRIP ${s + 1} / ${STRIPS_PER_SESSION}`);
+      const currentStrip = [];
+
+      for (let i = 0; i < SHOTS_PER_STRIP; i++) {
+        for (let c = COUNTDOWN_SECONDS; c > 0; c--) {
+          setCountdown(c);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+        setCountdown("◉");
+
+        setFlash(true);
+        const dataUrl = captureFrame();
+        if (dataUrl) currentStrip.push(dataUrl);
+
+        await new Promise((r) => setTimeout(r, 150));
+        setFlash(false);
+        await new Promise((r) => setTimeout(r, 600));
       }
-      setCountdown("📸");
 
-      // Flash + capture
-      setFlash(true);
-      const dataUrl = captureFrame();
-      if (dataUrl) captured.push(dataUrl);
+      allStrips.push(currentStrip);
+      setStrips([...allStrips]);
 
-      await new Promise((r) => setTimeout(r, 150));
-      setFlash(false);
-      await new Promise((r) => setTimeout(r, 600));
+      if (s < STRIPS_PER_SESSION - 1) {
+        setCountdown("NEXT");
+        await new Promise((r) => setTimeout(r, 1200));
+      }
     }
 
     setCountdown(null);
-    setPhotos(captured);
+    setProgress(null);
   }, [captureFrame]);
 
-  const buildStrip = useCallback(async () => {
-    if (photos.length === 0) return null;
+  const buildStripCanvas = useCallback(async (photoList) => {
+    if (!photoList || photoList.length === 0) return null;
     const stripCanvas = document.createElement("canvas");
     const imgW = 500;
     const imgH = 375;
-    const padding = 20;
-    const footerH = 70;
+    const padding = 24;
+    const footerH = 90;
 
     stripCanvas.width = imgW + padding * 2;
-    stripCanvas.height = imgH * photos.length + padding * (photos.length + 1) + footerH;
+    stripCanvas.height = imgH * photoList.length + padding * (photoList.length + 1) + footerH;
 
     const ctx = stripCanvas.getContext("2d");
-    ctx.fillStyle = "#f5f0e1";
+
+    // Warm off-white paper with subtle gradient
+    const grad = ctx.createLinearGradient(0, 0, 0, stripCanvas.height);
+    grad.addColorStop(0, "#f7f1e3");
+    grad.addColorStop(1, "#ece3d0");
+    ctx.fillStyle = grad;
     ctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
 
+    // Thin border
+    ctx.strokeStyle = "rgba(120, 90, 50, 0.35)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(6, 6, stripCanvas.width - 12, stripCanvas.height - 12);
+
     await Promise.all(
-      photos.map(
+      photoList.map(
         (src, idx) =>
           new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
-              ctx.drawImage(img, padding, padding + idx * (imgH + padding), imgW, imgH);
+              const x = padding;
+              const y = padding + idx * (imgH + padding);
+              ctx.drawImage(img, x, y, imgW, imgH);
+              // soft inner shadow line
+              ctx.strokeStyle = "rgba(0,0,0,0.15)";
+              ctx.lineWidth = 1;
+              ctx.strokeRect(x, y, imgW, imgH);
               resolve();
             };
             img.src = src;
@@ -122,51 +154,83 @@ export default function App() {
       )
     );
 
-    // Footer
-    const footerY = padding + photos.length * (imgH + padding);
-    ctx.fillStyle = "#3a3226";
-    ctx.font = "bold 22px 'Courier New', monospace";
+    const footerY = padding + photoList.length * (imgH + padding);
+    ctx.fillStyle = "#3a2f1e";
+    ctx.font = "bold 24px 'Courier New', monospace";
     ctx.textAlign = "center";
-    ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 30);
-    ctx.font = "14px 'Courier New', monospace";
-    ctx.fillText(new Date().toLocaleString(), stripCanvas.width / 2, footerY + 55);
+    ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 34);
+    ctx.font = "13px 'Courier New', monospace";
+    ctx.fillStyle = "#7a6a4f";
+    ctx.fillText(new Date().toLocaleString(), stripCanvas.width / 2, footerY + 62);
 
-    return stripCanvas.toDataURL("image/jpeg", 0.92);
-  }, [photos]);
+    return stripCanvas;
+  }, []);
 
-  const downloadStrip = useCallback(async () => {
-    const dataUrl = await buildStrip();
-    if (!dataUrl) return;
-    const link = document.createElement("a");
-    link.download = `retro-booth-${Date.now()}.jpg`;
-    link.href = dataUrl;
-    link.click();
-  }, [buildStrip]);
+  const downloadOneStrip = useCallback(
+    async (photoList, index) => {
+      const canvas = await buildStripCanvas(photoList);
+      if (!canvas) return;
+      const link = document.createElement("a");
+      link.download = `retro-booth-${index + 1}-${Date.now()}.jpg`;
+      link.href = canvas.toDataURL("image/jpeg", 0.92);
+      link.click();
+    },
+    [buildStripCanvas]
+  );
+
+  const downloadAllStrips = useCallback(async () => {
+    for (let i = 0; i < strips.length; i++) {
+      await downloadOneStrip(strips[i], i);
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }, [strips, downloadOneStrip]);
 
   const reset = () => {
-    setPhotos([]);
+    setStrips([]);
     setCountdown(null);
+    setProgress(null);
   };
 
   return (
     <div className="app">
-      <header>
-        <h1>📷 RETRO BOOTH</h1>
-        <p className="subtitle">Pick a filter · Smile · Download your strip</p>
+      {/* Ambient background glows */}
+      <div className="bg-glow bg-glow-1" />
+      <div className="bg-glow bg-glow-2" />
+      <div className="bg-grid" />
+
+      <header className="hud-header">
+        <div className="hud-dot" />
+        <h1>RETRO<span>BOOTH</span></h1>
+        <p className="subtitle">VINTAGE PHOTO SYSTEM · V.02</p>
       </header>
 
       {error && <div className="error">{error}</div>}
 
       <div className="booth">
+        <div className="booth-hud">
+          <span className="hud-tag">● REC</span>
+          <span className="hud-tag right">{filter.name.toUpperCase()}</span>
+        </div>
+
         <div className="viewfinder">
           <video
             ref={videoRef}
             playsInline
             muted
-            style={{ filter: filter.css }}
+            style={{ filter: filter.css, transform: "scaleX(-1)" }}
             className={flash ? "flash" : ""}
           />
+          <div className="scanlines" />
+          <div className="vignette" />
+
+          {/* HUD corner brackets */}
+          <span className="corner tl" />
+          <span className="corner tr" />
+          <span className="corner bl" />
+          <span className="corner br" />
+
           {countdown && <div className="countdown">{countdown}</div>}
+          {progress && <div className="progress-badge">{progress}</div>}
         </div>
 
         <canvas ref={canvasRef} style={{ display: "none" }} />
@@ -178,25 +242,26 @@ export default function App() {
               className={`filter-btn ${filter.id === f.id ? "active" : ""}`}
               onClick={() => setFilter(f)}
             >
+              <span className="dot" />
               {f.name}
             </button>
           ))}
         </div>
 
         <div className="controls">
-          {!photos.length && (
+          {strips.length === 0 && (
             <button
               className="shoot-btn"
               onClick={startSession}
               disabled={!cameraReady || countdown !== null}
             >
-              {cameraReady ? "START SESSION" : "LOADING..."}
+              {cameraReady ? `◉ START · ${STRIPS_PER_SESSION} STRIPS` : "INITIALIZING…"}
             </button>
           )}
-          {photos.length > 0 && (
+          {strips.length > 0 && (
             <>
-              <button className="shoot-btn" onClick={downloadStrip}>
-                ⬇ DOWNLOAD STRIP
+              <button className="shoot-btn" onClick={downloadAllStrips}>
+                ⬇ DOWNLOAD ALL
               </button>
               <button className="reset-btn" onClick={reset}>
                 RETAKE
@@ -206,17 +271,35 @@ export default function App() {
         </div>
       </div>
 
-      {photos.length > 0 && (
+      {strips.length > 0 && (
         <div className="preview">
-          <h2>Your Strip</h2>
-          <div className="strip">
-            {photos.map((p, i) => (
-              <img key={i} src={p} alt={`shot-${i + 1}`} />
+          <h2>— YOUR STRIPS —</h2>
+          <div className="strips-grid">
+            {strips.map((stripPhotos, sIdx) => (
+              <div key={sIdx} className="strip-wrapper">
+                <div className="strip">
+                  {stripPhotos.map((p, i) => (
+                    <img key={i} src={p} alt={`strip-${sIdx + 1}-shot-${i + 1}`} />
+                  ))}
+                  <div className="strip-footer">★ RETRO BOOTH ★</div>
+                </div>
+                <button
+                  className="reset-btn small"
+                  onClick={() => downloadOneStrip(stripPhotos, sIdx)}
+                >
+                  ⬇ STRIP {sIdx + 1}
+                </button>
+              </div>
             ))}
-            <div className="strip-footer">★ RETRO BOOTH ★</div>
           </div>
         </div>
       )}
+
+      <footer className="hud-footer">
+        <span>EST. 2026</span>
+        <span>·</span>
+        <span>MADE WITH ◉ REACT</span>
+      </footer>
     </div>
   );
 }
