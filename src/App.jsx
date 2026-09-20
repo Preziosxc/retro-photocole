@@ -2,8 +2,9 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import "./App.css";
 
 const FILTERS = [
-  { id: "sepia", name: "Vintage", css: "sepia(0.75) contrast(1.1) saturate(1.2) brightness(1.05)" },
+  { id: "green", name: "Cinematic Green", css: "sepia(0.5) hue-rotate(45deg) saturate(1.4) contrast(1.15) brightness(0.95)" },
   { id: "bw", name: "Classic B&W", css: "grayscale(1) contrast(1.25) brightness(1.05)" },
+  { id: "noir", name: "Sepia Noir", css: "grayscale(1) sepia(0.35) contrast(1.3) brightness(1.05)" },
   { id: "faded", name: "Polaroid", css: "sepia(0.25) contrast(0.9) saturate(0.85) brightness(1.15) hue-rotate(-10deg)" },
   { id: "soft", name: "Soft Glow", css: "brightness(1.12) contrast(0.92) saturate(1.15) sepia(0.08)" },
 ];
@@ -359,7 +360,7 @@ export default function App() {
           {photos.length > 0 && (
             <>
               <button className="shoot-btn" onClick={downloadStrip}>
-                 DOWNLOAD STRIP
+                ⬇ DOWNLOAD STRIP
               </button>
               <button className="reset-btn" onClick={reset}>
                 RETAKE
