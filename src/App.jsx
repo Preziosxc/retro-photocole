@@ -2,7 +2,7 @@ import { useRef, useState, useCallback, useEffect } from "react";
 import "./App.css";
 
 const FILTERS = [
-  { id: "green", name: "Cinematic Green", css: "sepia(0.5) hue-rotate(45deg) saturate(1.4) contrast(1.15) brightness(0.95)" },
+  { id: "antique", name: "Antique Sepia", css: "sepia(0.85) contrast(1.25) brightness(0.92) saturate(1.1)", antique: true },
   { id: "bw", name: "Classic B&W", css: "grayscale(1) contrast(1.25) brightness(1.05)" },
   { id: "noir", name: "Sepia Noir", css: "grayscale(1) sepia(0.35) contrast(1.3) brightness(1.05)" },
   { id: "faded", name: "Polaroid", css: "sepia(0.25) contrast(0.9) saturate(0.85) brightness(1.15) hue-rotate(-10deg)" },
@@ -70,6 +70,39 @@ export default function App() {
     ctx.restore();
   };
 
+  // Dark vignette around the edges (old-photo look)
+  const applyVignette = (ctx, w, h) => {
+    const gradient = ctx.createRadialGradient(
+      w / 2, h / 2, Math.min(w, h) * 0.3,
+      w / 2, h / 2, Math.max(w, h) * 0.75
+    );
+    gradient.addColorStop(0, "rgba(0,0,0,0)");
+    gradient.addColorStop(0.7, "rgba(0,0,0,0.35)");
+    gradient.addColorStop(1, "rgba(0,0,0,0.75)");
+    ctx.save();
+    ctx.globalCompositeOperation = "multiply";
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  };
+
+  // Random film grain specks
+  const applyGrain = (ctx, w, h) => {
+    const intensity = 0.06;
+    const density = Math.floor((w * h) / 900);
+    ctx.save();
+    ctx.globalAlpha = intensity;
+    for (let i = 0; i < density; i++) {
+      const x = Math.random() * w;
+      const y = Math.random() * h;
+      const size = Math.random() * 1.8 + 0.4;
+      const shade = Math.random() > 0.5 ? 255 : 0;
+      ctx.fillStyle = `rgb(${shade},${shade},${shade})`;
+      ctx.fillRect(x, y, size, size);
+    }
+    ctx.restore();
+  };
+
   const captureFrame = useCallback(async () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -123,6 +156,12 @@ export default function App() {
     if (filter.id === "soft") {
       ctx.filter = "none";
       applySoftGlow(ctx, capW, capH);
+    }
+
+    if (filter.antique) {
+      ctx.filter = "none";
+      applyVignette(ctx, capW, capH);
+      applyGrain(ctx, capW, capH);
     }
 
     return canvas.toDataURL("image/jpeg", 1.0);
