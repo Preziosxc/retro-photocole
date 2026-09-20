@@ -9,6 +9,11 @@ const FILTERS = [
   { id: "soft", name: "Soft Glow", css: "brightness(1.12) contrast(0.92) saturate(1.15) sepia(0.08)" },
 ];
 
+const STRIP_STYLES = [
+  { id: "paper", name: "Classic Paper" },
+  { id: "black", name: "Black Film" },
+];
+
 const SHOTS_PER_STRIP = 3;
 const COUNTDOWN_SECONDS = 3;
 
@@ -24,7 +29,10 @@ export default function App() {
   const streamRef = useRef(null);
 
   const [filter, setFilter] = useState(FILTERS[0]);
-  const [orientation, setOrientation] = useState("portrait"); // "portrait" | "landscape"
+  const [orientation, setOrientation] = useState("portrait");
+  const [stripStyle, setStripStyle] = useState("paper"); // "paper" | "black"
+  const [facing, setFacing] = useState("user");
+  const [flashOn, setFlashOn] = useState(false);
   const [photos, setPhotos] = useState([]);
   const [countdown, setCountdown] = useState(null);
   const [cameraReady, setCameraReady] = useState(false);
@@ -33,17 +41,24 @@ export default function App() {
 
   useEffect(() => {
     let mounted = true;
+
     async function startCamera() {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+      setCameraReady(false);
+
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 1920 },
             height: { ideal: 1080 },
-            facingMode: "user",
+            facingMode: facing,
           },
           audio: false,
         });
-        if (!mounted) return;
+        if (!mounted) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -51,15 +66,33 @@ export default function App() {
           setCameraReady(true);
         }
       } catch (err) {
-        setError("Camera access denied. Please allow camera permissions.");
+        setError(
+          facing === "environment"
+            ? "Back camera not available on this device."
+            : "Camera access denied. Please allow camera permissions."
+        );
         console.error(err);
       }
     }
+
     startCamera();
+
     return () => {
       mounted = false;
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
+  }, [facing]);
+
+  const toggleTorch = useCallback(async (on) => {
+    const track = streamRef.current?.getVideoTracks?.()[0];
+    if (!track) return;
+    const caps = track.getCapabilities?.() || {};
+    if (!caps.torch) return;
+    try {
+      await track.applyConstraints({ advanced: [{ torch: on }] });
+    } catch (err) {
+      console.warn("Torch toggle failed:", err);
+    }
   }, []);
 
   const applySoftGlow = (ctx, w, h) => {
@@ -70,7 +103,6 @@ export default function App() {
     ctx.restore();
   };
 
-  // Dark vignette around the edges (old-photo look)
   const applyVignette = (ctx, w, h) => {
     const gradient = ctx.createRadialGradient(
       w / 2, h / 2, Math.min(w, h) * 0.3,
@@ -86,7 +118,6 @@ export default function App() {
     ctx.restore();
   };
 
-  // Random film grain specks
   const applyGrain = (ctx, w, h) => {
     const intensity = 0.06;
     const density = Math.floor((w * h) / 900);
@@ -129,7 +160,6 @@ export default function App() {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
 
-    // Cover-crop the video into the target shape
     const srcAspect = vw / vh;
     const dstAspect = capW / capH;
 
@@ -148,8 +178,10 @@ export default function App() {
 
     ctx.filter = filter.css;
     ctx.save();
-    ctx.translate(capW, 0);
-    ctx.scale(-1, 1);
+    if (facing === "user") {
+      ctx.translate(capW, 0);
+      ctx.scale(-1, 1);
+    }
     ctx.drawImage(video, sx, sy, sw, sh, 0, 0, capW, capH);
     ctx.restore();
 
@@ -165,10 +197,13 @@ export default function App() {
     }
 
     return canvas.toDataURL("image/jpeg", 1.0);
-  }, [filter, orientation]);
+  }, [filter, orientation, facing]);
 
   const startSession = useCallback(async () => {
     setPhotos([]);
+
+    if (flashOn) await toggleTorch(true);
+
     const captured = [];
 
     for (let i = 0; i < SHOTS_PER_STRIP; i++) {
@@ -188,14 +223,17 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 600));
     }
 
+    if (flashOn) await toggleTorch(false);
+
     setCountdown(null);
     setPhotos(captured);
-  }, [captureFrame]);
+  }, [captureFrame, flashOn, toggleTorch]);
 
   const buildStripCanvas = useCallback(async () => {
     if (photos.length === 0) return null;
 
     const isPortrait = orientation === "portrait";
+    const isBlack = stripStyle === "black";
     const imgW = isPortrait ? PORTRAIT_W : LANDSCAPE_W;
     const imgH = isPortrait ? PORTRAIT_H : LANDSCAPE_H;
     const padding = isPortrait ? 40 : 36;
@@ -204,12 +242,10 @@ export default function App() {
     const stripCanvas = document.createElement("canvas");
 
     if (isPortrait) {
-      // Vertical stack
       stripCanvas.width = imgW + padding * 2;
       stripCanvas.height =
         imgH * photos.length + padding * (photos.length + 1) + footerH;
     } else {
-      // Horizontal row (landscape strip)
       stripCanvas.width =
         imgW * photos.length + padding * (photos.length + 1);
       stripCanvas.height = imgH + padding * 2 + footerH;
@@ -219,19 +255,29 @@ export default function App() {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
 
-    // Paper background
-    const grad = ctx.createLinearGradient(0, 0, 0, stripCanvas.height);
-    grad.addColorStop(0, "#f7f1e3");
-    grad.addColorStop(1, "#ece3d0");
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
+    // Background
+    if (isBlack) {
+      const grad = ctx.createLinearGradient(0, 0, 0, stripCanvas.height);
+      grad.addColorStop(0, "#0a0a0a");
+      grad.addColorStop(0.5, "#141414");
+      grad.addColorStop(1, "#000000");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
+    } else {
+      const grad = ctx.createLinearGradient(0, 0, 0, stripCanvas.height);
+      grad.addColorStop(0, "#f7f1e3");
+      grad.addColorStop(1, "#ece3d0");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
+    }
 
     // Outer border
-    ctx.strokeStyle = "rgba(120, 90, 50, 0.35)";
+    ctx.strokeStyle = isBlack
+      ? "rgba(255, 255, 255, 0.18)"
+      : "rgba(120, 90, 50, 0.35)";
     ctx.lineWidth = 2;
     ctx.strokeRect(8, 8, stripCanvas.width - 16, stripCanvas.height - 16);
 
-    // Draw each photo
     await Promise.all(
       photos.map(
         (src, idx) =>
@@ -248,7 +294,9 @@ export default function App() {
               }
               ctx.drawImage(img, x, y, imgW, imgH);
 
-              ctx.strokeStyle = "rgba(0,0,0,0.18)";
+              ctx.strokeStyle = isBlack
+                ? "rgba(255, 255, 255, 0.25)"
+                : "rgba(0, 0, 0, 0.18)";
               ctx.lineWidth = 1;
               ctx.strokeRect(x, y, imgW, imgH);
               resolve();
@@ -258,16 +306,15 @@ export default function App() {
       )
     );
 
-    // Footer
-    ctx.fillStyle = "#3a2f1e";
     ctx.textAlign = "center";
 
     if (isPortrait) {
       const footerY = padding + photos.length * (imgH + padding);
+      ctx.fillStyle = isBlack ? "#f0e6d2" : "#3a2f1e";
       ctx.font = "bold 40px 'Courier New', monospace";
       ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 60);
       ctx.font = "22px 'Courier New', monospace";
-      ctx.fillStyle = "#7a6a4f";
+      ctx.fillStyle = isBlack ? "#8a8072" : "#7a6a4f";
       ctx.fillText(
         new Date().toLocaleString(),
         stripCanvas.width / 2,
@@ -275,10 +322,11 @@ export default function App() {
       );
     } else {
       const footerY = padding + imgH + padding;
+      ctx.fillStyle = isBlack ? "#f0e6d2" : "#3a2f1e";
       ctx.font = "bold 36px 'Courier New', monospace";
       ctx.fillText("★ RETRO BOOTH ★", stripCanvas.width / 2, footerY + 50);
       ctx.font = "20px 'Courier New', monospace";
-      ctx.fillStyle = "#7a6a4f";
+      ctx.fillStyle = isBlack ? "#8a8072" : "#7a6a4f";
       ctx.fillText(
         new Date().toLocaleString(),
         stripCanvas.width / 2,
@@ -287,16 +335,16 @@ export default function App() {
     }
 
     return stripCanvas;
-  }, [photos, orientation]);
+  }, [photos, orientation, stripStyle]);
 
   const downloadStrip = useCallback(async () => {
     const canvas = await buildStripCanvas();
     if (!canvas) return;
     const link = document.createElement("a");
-    link.download = `retro-booth-${orientation}-${Date.now()}.jpg`;
+    link.download = `retro-booth-${stripStyle}-${orientation}-${Date.now()}.jpg`;
     link.href = canvas.toDataURL("image/jpeg", 1.0);
     link.click();
-  }, [buildStripCanvas, orientation]);
+  }, [buildStripCanvas, orientation, stripStyle]);
 
   const reset = () => {
     setPhotos([]);
@@ -304,8 +352,23 @@ export default function App() {
   };
 
   const switchOrientation = (mode) => {
-    if (photos.length > 0) return; // lock during results
+    if (photos.length > 0) return;
     setOrientation(mode);
+  };
+
+  const switchStripStyle = (style) => {
+    if (photos.length > 0) return;
+    setStripStyle(style);
+  };
+
+  const switchFacing = () => {
+    if (photos.length > 0) return;
+    setFacing((f) => (f === "user" ? "environment" : "user"));
+  };
+
+  const toggleFlash = () => {
+    if (photos.length > 0) return;
+    setFlashOn((v) => !v);
   };
 
   return (
@@ -337,7 +400,10 @@ export default function App() {
             ref={videoRef}
             playsInline
             muted
-            style={{ filter: filter.css, transform: "scaleX(-1)" }}
+            style={{
+              filter: filter.css,
+              transform: facing === "user" ? "scaleX(-1)" : "none",
+            }}
             className={flash ? "flash" : ""}
           />
           <div className="scanlines" />
@@ -370,6 +436,45 @@ export default function App() {
           >
             <span className="orient-icon">▭</span>
             LANDSCAPE
+          </button>
+        </div>
+
+        {/* Strip style toggle */}
+        <div className="orientation-toggle">
+          {STRIP_STYLES.map((s) => (
+            <button
+              key={s.id}
+              className={`orient-btn ${stripStyle === s.id ? "active" : ""} ${
+                s.id === "black" ? "black-style" : ""
+              }`}
+              onClick={() => switchStripStyle(s.id)}
+              disabled={photos.length > 0}
+            >
+              <span className="orient-icon">{s.id === "black" ? "■" : "▢"}</span>
+              {s.name.toUpperCase()}
+            </button>
+          ))}
+        </div>
+
+        {/* Camera + Flash controls */}
+        <div className="camera-controls">
+          <button
+            className={`cam-btn ${facing === "environment" ? "active" : ""}`}
+            onClick={switchFacing}
+            disabled={photos.length > 0}
+            title="Switch camera"
+          >
+            <span className="cam-icon">⟳</span>
+            {facing === "user" ? "FRONT" : "BACK"}
+          </button>
+          <button
+            className={`cam-btn flash ${flashOn ? "active" : ""}`}
+            onClick={toggleFlash}
+            disabled={photos.length > 0}
+            title="Toggle flash"
+          >
+            <span className="cam-icon">{flashOn ? "⚡" : "⚡̸"}</span>
+            FLASH {flashOn ? "ON" : "OFF"}
           </button>
         </div>
 
@@ -413,7 +518,7 @@ export default function App() {
         <div className="preview">
           <h2>— YOUR STRIP —</h2>
           <div className="strip-wrapper">
-            <div className={`strip ${orientation}`}>
+            <div className={`strip ${orientation} ${stripStyle}`}>
               {photos.map((p, i) => (
                 <img key={i} src={p} alt={`shot-${i + 1}`} />
               ))}

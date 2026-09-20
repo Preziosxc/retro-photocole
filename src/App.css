@@ -247,12 +247,13 @@ body {
   50%      { transform: scale(1.12); opacity: 0.85; }
 }
 
-/* ============ ORIENTATION TOGGLE ============ */
+/* ============ ORIENTATION + STYLE TOGGLES ============ */
 .orientation-toggle {
   display: flex;
   gap: 10px;
   justify-content: center;
-  margin-top: 22px;
+  margin-top: 18px;
+  flex-wrap: wrap;
 }
 
 .orient-btn {
@@ -292,8 +293,76 @@ body {
   cursor: not-allowed;
 }
 
+.orient-btn.black-style.active {
+  background: linear-gradient(135deg, #2a2a2a, #0a0a0a);
+  color: #f0e6d2;
+  box-shadow:
+    0 0 24px rgba(255, 255, 255, 0.15),
+    0 8px 24px rgba(0, 0, 0, 0.6);
+}
+
 .orient-icon {
   font-size: 1.1rem;
+  line-height: 1;
+}
+
+/* ============ CAMERA + FLASH CONTROLS ============ */
+.camera-controls {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+.cam-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 179, 71, 0.06);
+  color: var(--amber-soft);
+  border: 1px solid var(--panel-border);
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 0.72rem;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  backdrop-filter: blur(8px);
+}
+
+.cam-btn:hover:not(:disabled) {
+  background: rgba(255, 179, 71, 0.14);
+  transform: translateY(-1px);
+}
+
+.cam-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cam-btn.active {
+  background: linear-gradient(135deg, rgba(255, 179, 71, 0.9), rgba(255, 106, 0, 0.9));
+  color: #1a1208;
+  border-color: transparent;
+  box-shadow:
+    0 0 24px rgba(255, 179, 71, 0.5),
+    0 8px 24px rgba(255, 106, 0, 0.3);
+}
+
+.cam-btn.flash.active {
+  background: linear-gradient(135deg, #fff4cc, #ffcc33);
+  color: #1a1208;
+  border-color: transparent;
+  box-shadow:
+    0 0 26px rgba(255, 204, 51, 0.8),
+    0 0 60px rgba(255, 204, 51, 0.4);
+}
+
+.cam-icon {
+  font-size: 1rem;
   line-height: 1;
 }
 
@@ -357,6 +426,7 @@ body {
   gap: 12px;
   justify-content: center;
   flex-wrap: wrap;
+  margin-top: 6px;
 }
 
 .shoot-btn {
@@ -506,6 +576,22 @@ body {
   transform: rotate(180deg);
 }
 
+/* ============ BLACK FILM STRIP STYLE ============ */
+.strip.black {
+  background: linear-gradient(180deg, #0a0a0a 0%, #141414 50%, #000 100%);
+  box-shadow:
+    0 20px 60px rgba(0, 0, 0, 0.85),
+    0 0 40px rgba(255, 255, 255, 0.05);
+}
+
+.strip.black::before {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.strip.black .strip-footer {
+  color: #f0e6d2;
+}
+
 /* ============ ERROR ============ */
 .error {
   background: rgba(255, 59, 48, 0.15);
@@ -541,4 +627,5 @@ body {
   .filters { gap: 8px; }
   .filter-btn { padding: 8px 14px; font-size: 0.7rem; letter-spacing: 1.5px; }
   .orient-btn { padding: 10px 16px; font-size: 0.65rem; letter-spacing: 2px; }
+  .cam-btn { padding: 8px 14px; font-size: 0.65rem; letter-spacing: 1.5px; }
 }
