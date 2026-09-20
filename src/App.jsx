@@ -13,7 +13,6 @@ const FILTERS = [
 const SHOTS_PER_STRIP = 3;
 const COUNTDOWN_SECONDS = 3;
 
-// Capture sizes
 const PORTRAIT_W = 720;
 const PORTRAIT_H = 960;
 const LANDSCAPE_W = 960;
@@ -78,14 +77,12 @@ export default function App() {
   };
 
   const applyDreamyBlur = (ctx, w, h) => {
-    // Lighter soft glow for the dreamy look
     ctx.save();
     ctx.globalAlpha = 0.4;
     ctx.globalCompositeOperation = "lighten";
     ctx.drawImage(ctx.canvas, -3, -3, w + 6, h + 6);
     ctx.restore();
 
-    // Subtle warm overlay to lift blacks
     ctx.save();
     ctx.globalAlpha = 0.12;
     ctx.fillStyle = "#ffeedd";
@@ -140,15 +137,11 @@ export default function App() {
     const capW = orientation === "portrait" ? PORTRAIT_W : LANDSCAPE_W;
     const capH = orientation === "portrait" ? PORTRAIT_H : LANDSCAPE_H;
 
-    canvas.width = capW;
-    canvas.height = capH;
-
-    const ctx = canvas.getContext("2d");
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.filter = "none";
-    ctx.clearRect(0, 0, capW, capH);
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
+    // 1) Draw the raw mirrored frame to an OFFLINE canvas
+    const raw = document.createElement("canvas");
+    raw.width = capW;
+    raw.height = capH;
+    const rctx = raw.getContext("2d");
 
     const srcAspect = vw / vh;
     const dstAspect = capW / capH;
@@ -166,25 +159,35 @@ export default function App() {
       sy = (vh - sh) / 2;
     }
 
-    ctx.filter = filter.css;
-    ctx.save();
-    ctx.translate(capW, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, capW, capH);
-    ctx.restore();
+    rctx.save();
+    rctx.translate(capW, 0);
+    rctx.scale(-1, 1);
+    rctx.drawImage(video, sx, sy, sw, sh, 0, 0, capW, capH);
+    rctx.restore();
 
+    // 2) Draw the offline canvas ONTO the main canvas WITH the filter
+    canvas.width = capW;
+    canvas.height = capH;
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    // Filter is set RIGHT before drawImage — this is the key fix
+    ctx.filter = filter.css;
+    ctx.drawImage(raw, 0, 0, capW, capH);
+    ctx.filter = "none";
+
+    // 3) Extra canvas-only effects
     if (filter.id === "soft") {
-      ctx.filter = "none";
       applySoftGlow(ctx, capW, capH);
     }
 
     if (filter.dreamy) {
-      ctx.filter = "none";
       applyDreamyBlur(ctx, capW, capH);
     }
 
     if (filter.antique) {
-      ctx.filter = "none";
       applyVignette(ctx, capW, capH);
       applyGrain(ctx, capW, capH);
     }
@@ -242,14 +245,12 @@ export default function App() {
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = "high";
 
-    // Paper background
     const grad = ctx.createLinearGradient(0, 0, 0, stripCanvas.height);
     grad.addColorStop(0, "#f7f1e3");
     grad.addColorStop(1, "#ece3d0");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, stripCanvas.width, stripCanvas.height);
 
-    // Outer border
     ctx.strokeStyle = "rgba(120, 90, 50, 0.35)";
     ctx.lineWidth = 2;
     ctx.strokeRect(8, 8, stripCanvas.width - 16, stripCanvas.height - 16);
@@ -378,7 +379,6 @@ export default function App() {
 
         <canvas ref={canvasRef} style={{ display: "none" }} />
 
-        {/* Orientation toggle */}
         <div className="orientation-toggle">
           <button
             className={`orient-btn ${orientation === "portrait" ? "active" : ""}`}
