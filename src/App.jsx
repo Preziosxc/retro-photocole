@@ -7,6 +7,7 @@ const FILTERS = [
   { id: "noir", name: "Sepia Noir", css: "grayscale(1) sepia(0.35) contrast(1.3) brightness(1.05)" },
   { id: "faded", name: "Polaroid", css: "sepia(0.25) contrast(0.9) saturate(0.85) brightness(1.15) hue-rotate(-10deg)" },
   { id: "soft", name: "Soft Glow", css: "brightness(1.12) contrast(0.92) saturate(1.15) sepia(0.08)" },
+  { id: "dreamy", name: "Dreamy", css: "brightness(1.15) contrast(0.85) saturate(0.95) sepia(0.15) hue-rotate(-15deg)", dreamy: true },
 ];
 
 const SHOTS_PER_STRIP = 3;
@@ -73,6 +74,22 @@ export default function App() {
     ctx.globalAlpha = 0.35;
     ctx.globalCompositeOperation = "lighten";
     ctx.drawImage(ctx.canvas, -4, -4, w + 8, h + 8);
+    ctx.restore();
+  };
+
+  const applyDreamyBlur = (ctx, w, h) => {
+    // Lighter soft glow for the dreamy look
+    ctx.save();
+    ctx.globalAlpha = 0.4;
+    ctx.globalCompositeOperation = "lighten";
+    ctx.drawImage(ctx.canvas, -3, -3, w + 6, h + 6);
+    ctx.restore();
+
+    // Subtle warm overlay to lift blacks
+    ctx.save();
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = "#ffeedd";
+    ctx.fillRect(0, 0, w, h);
     ctx.restore();
   };
 
@@ -159,6 +176,11 @@ export default function App() {
     if (filter.id === "soft") {
       ctx.filter = "none";
       applySoftGlow(ctx, capW, capH);
+    }
+
+    if (filter.dreamy) {
+      ctx.filter = "none";
+      applyDreamyBlur(ctx, capW, capH);
     }
 
     if (filter.antique) {
